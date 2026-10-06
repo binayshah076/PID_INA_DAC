@@ -7,17 +7,19 @@
  ********************************************************/
 #include <Wire.h>
 #include <INA219_WE.h>
-#define I2C_ADDRESS 0x40
-
-
 #include <PID_v1.h>
-
+#define I2C_ADDRESS 0x40
 #define MCP4725_ADDR    0x60		// The address depends on the state of pin A0
 
-static union {
-  uint16_t dacValue = 4095;
-  uint8_t data[2];
-};
+uint16_t dacValue = 4095;  // if needed
+
+void setMCP4725(uint16_t value) {
+  Wire.beginTransmission(MCP4725_ADDR);
+  Wire.write(0x40);                 // command: write DAC
+  Wire.write(value >> 4);           // upper 8 bits
+  Wire.write((value & 0x0F) << 4);  // lower 4 bits
+  Wire.endTransmission();
+}
 /* There are several ways to create your INA219 object:
  * INA219_WE ina219 = INA219_WE(); -> uses Wire / I2C Address = 0x40
  * INA219_WE ina219 = INA219_WE(I2C_ADDRESS); -> uses Wire / I2C_ADDRESS
@@ -81,7 +83,7 @@ void setup() {
     BRNG_16   -> 16 V
     BRNG_32   -> 32 V (DEFAULT)
   */
-  ina219.setBusRange(BRNG_16); // choose range and uncomment for change of default
+  ina219.setBusRange(INA219_BRNG_16); // choose range and uncomment for change of default
 
   /* If the current values delivered by the INA219 differ by a constant factor
      from values obtained with calibrated equipment you can define a correction factor.
@@ -110,25 +112,10 @@ void setup() {
 
   //turn the PID on
   myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(0, 4095);  // if controlling DAC  
 }
 
 void loop() {
-
-  // DAC wiper control
-  setRegisterValue();
-  
-  if (dacValue == 0) {
-    dacValue = 4095;
-  } else {
-    dacValue--;
-  }
-  
- // Get register value 
- uint16_t getRegisterValue() {
-   Wire.requestFrom(MCP4725_ADDR, 2, false);
-   data[1] = Wire.read();
-   data[0] = Wire.read();
-  } 
 
   float shuntVoltage_mV = 0.0;
   float loadVoltage_V = 0.0;
@@ -161,11 +148,20 @@ void loop() {
   Input = current_mA;
   myPID.Compute();
   
-  // Set register value
-void setRegisterValue() {
-  Wire.beginTransmission(MCP4725_ADDR);
-  Wire.write(data[1]);
-  Wire.write(data[0]);
-  Wire.endTransmission(true);
-  analogWrite(3,Output);
+  // DAC wiper control
+  // Use PID output to drive DAC (example)
+  dacValue = (uint16_t)Output;
+  setMCP4725(dacValue);
+
+  // If PWM is also needed:
+  // analogWrite(3, map(Output, 0, 4095, 0, 255));
+
+    // Print occasionally, not every loop
+  /*********************************
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 500) {
+    lastPrint = millis();
+    Serial.print("Current [mA]: "); Serial.println(current_mA);
+  }
+  *********************************/
 }
