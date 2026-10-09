@@ -12,6 +12,9 @@
 #define MCP4725_ADDR 0x60    // The address depends on the state of pin A0
 #define SAMPLE_MODE_16 0x16  // Or the appropriate value required by your code
 
+float cutoffvoltage = 3.0;
+float cutoffpower = 500.0;
+
 uint16_t dacValue = 4095;  // if needed
 
 void setMCP4725(uint16_t value) {
@@ -45,7 +48,6 @@ void setup() {
     while (1)
       ;
   }
-
 
 
   /* Set ADC Mode for Bus and ShuntVoltage
@@ -109,13 +111,13 @@ void setup() {
 
 
   //initialize the variables we're linked to
-  Input = ina219.getCurrent_mA();
-  Setpoint = 100;  // 120 is SET Current load = 0.5A for inbuild ADC (INA219)
+  Input = ina219.getBusPower();
+  Setpoint = cutoffpower; 
 
   //turn the PID on
   myPID.SetMode(AUTOMATIC);
   myPID.SetSampleTime(100);  // compute every 100 ms
-                             // myPID.SetOutputLimits(0, 4095);  // if controlling DAC
+  myPID.SetOutputLimits(0, 4095);  // if controlling DAC
 }
 
 void loop() {
@@ -160,13 +162,20 @@ void loop() {
     Serial.println();
 
 
-    Input = current_mA;
+    Input = power_mW;
     myPID.Compute();
 
     // DAC wiper control
     // Use PID output to drive DAC (example)
-    dacValue = (uint16_t)constrain(Output, 0, 4095);  //constrain() — prevents out-of-range DAC values
+    // Force DAC to 0 if bus voltage drops to 3V or below
+    if (busVoltage_V <= cutoffvoltage) {
+      dacValue = 0;
+      setMCP4725(0);
+      Serial.println("WARNING: Bus voltage <= 3V, DAC forced to 0!");
+    } else {
+    dacValue = (uint16_t)constrain(Output, 0, 4095);
     setMCP4725(dacValue);
+    }
 
     // If PWM is also needed:
     // analogWrite(3, map(Output, 0, 4095, 0, 255));
@@ -183,3 +192,4 @@ void loop() {
   /***********************************/
   }
 } 
+
